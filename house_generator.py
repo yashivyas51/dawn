@@ -48,7 +48,7 @@ def create_floor(name, x, y, w, d, thickness, z_level, collection):
 def setup_materials():
     materials = {}
 
-    # Sandstone
+    # Sandstone with Brick Pattern
     mat_sandstone = bpy.data.materials.new(name="Sandstone")
     mat_sandstone.use_nodes = True
     nodes = mat_sandstone.node_tree.nodes
@@ -56,18 +56,18 @@ def setup_materials():
     node_output = nodes.new(type='ShaderNodeOutputMaterial')
     node_pbsdf = nodes.new(type='ShaderNodeBsdfPrincipled')
     node_pbsdf.inputs['Base Color'].default_value = (0.8, 0.7, 0.5, 1.0)
-    node_pbsdf.inputs['Roughness'].default_value = 0.8
-    # Add noise for texture
-    node_noise = nodes.new(type='ShaderNodeTexNoise')
-    node_noise.inputs['Scale'].default_value = 50.0
-    node_bump = nodes.new(type='ShaderNodeBump')
-    node_bump.inputs['Strength'].default_value = 0.1
-    mat_sandstone.node_tree.links.new(node_noise.outputs['Fac'], node_bump.inputs['Height'])
-    mat_sandstone.node_tree.links.new(node_bump.outputs['Normal'], node_pbsdf.inputs['Normal'])
+
+    node_brick = nodes.new(type='ShaderNodeTexBrick')
+    node_brick.inputs['Scale'].default_value = 10.0
+    node_brick.inputs['Color1'].default_value = (0.8, 0.7, 0.5, 1.0)
+    node_brick.inputs['Color2'].default_value = (0.75, 0.65, 0.45, 1.0)
+    node_brick.inputs['Mortar'].default_value = (0.3, 0.3, 0.3, 1.0)
+
+    mat_sandstone.node_tree.links.new(node_brick.outputs['Color'], node_pbsdf.inputs['Base Color'])
     mat_sandstone.node_tree.links.new(node_pbsdf.outputs['BSDF'], node_output.inputs['Surface'])
     materials['Sandstone'] = mat_sandstone
 
-    # Marble
+    # Marble with Tiles
     mat_marble = bpy.data.materials.new(name="Marble")
     mat_marble.use_nodes = True
     nodes = mat_marble.node_tree.nodes
@@ -76,12 +76,22 @@ def setup_materials():
     node_pbsdf = nodes.new(type='ShaderNodeBsdfPrincipled')
     node_pbsdf.inputs['Base Color'].default_value = (0.9, 0.9, 0.9, 1.0)
     node_pbsdf.inputs['Roughness'].default_value = 0.1
-    node_musgrave = nodes.new(type='ShaderNodeTexNoise')
-    node_musgrave.inputs['Scale'].default_value = 10.0
-    node_musgrave.inputs['Detail'].default_value = 15.0
-    node_ramp = nodes.new(type='ShaderNodeValToRGB')
-    mat_marble.node_tree.links.new(node_musgrave.outputs['Fac'], node_ramp.inputs['Fac'])
-    mat_marble.node_tree.links.new(node_ramp.outputs['Color'], node_pbsdf.inputs['Base Color'])
+
+    node_noise = nodes.new(type='ShaderNodeTexNoise')
+    node_noise.inputs['Scale'].default_value = 10.0
+    node_noise.inputs['Detail'].default_value = 15.0
+
+    node_brick = nodes.new(type='ShaderNodeTexBrick')
+    node_brick.inputs['Scale'].default_value = 5.0
+    node_brick.inputs['Mortar Size'].default_value = 0.01
+
+    node_mix = nodes.new(type='ShaderNodeMix')
+    node_mix.data_type = 'RGBA'
+    node_mix.blend_type = 'MIX'
+    mat_marble.node_tree.links.new(node_noise.outputs['Fac'], node_mix.inputs[6])
+    mat_marble.node_tree.links.new(node_brick.outputs['Fac'], node_mix.inputs[7])
+
+    mat_marble.node_tree.links.new(node_mix.outputs[2], node_pbsdf.inputs['Base Color'])
     mat_marble.node_tree.links.new(node_pbsdf.outputs['BSDF'], node_output.inputs['Surface'])
     materials['Marble'] = mat_marble
 
@@ -138,6 +148,17 @@ def setup_materials():
     mat_rgb.node_tree.links.new(node_emit.outputs['Emission'], node_output.inputs['Surface'])
     materials['RGB'] = mat_rgb
 
+    # Green for Plants
+    mat_green = bpy.data.materials.new(name="PlantGreen")
+    mat_green.use_nodes = True
+    nodes = mat_green.node_tree.nodes
+    nodes.clear()
+    node_output = nodes.new(type='ShaderNodeOutputMaterial')
+    node_pbsdf = nodes.new(type='ShaderNodeBsdfPrincipled')
+    node_pbsdf.inputs['Base Color'].default_value = (0.1, 0.5, 0.1, 1.0)
+    mat_green.node_tree.links.new(node_pbsdf.outputs['BSDF'], node_output.inputs['Surface'])
+    materials['Green'] = mat_green
+
     return materials
 
 def create_furniture_primitive(name, location, scale, material, collection):
@@ -152,17 +173,35 @@ def create_furniture_primitive(name, location, scale, material, collection):
     collection.objects.link(obj)
     return obj
 
+def create_sofa(name, location, scale, mats, collection):
+    # Base
+    create_furniture_primitive(f"{name}_Base", location, scale, mats['Wood'], collection)
+    # Backrest
+    back_loc = Vector(location) + Vector((0, scale.y/2, scale.z/2))
+    create_furniture_primitive(f"{name}_Back", back_loc, (scale.x, 0.1, scale.z), mats['Wood'], collection)
+
+def create_table(name, location, scale, mats, collection):
+    # Top
+    create_furniture_primitive(f"{name}_Top", location, scale, mats['Wood'], collection)
+    # Legs
+    leg_offset_x = scale.x / 2 - 0.05
+    leg_offset_y = scale.y / 2 - 0.05
+    for sx in [-1, 1]:
+        for sy in [-1, 1]:
+            leg_loc = Vector(location) - Vector((0, 0, scale.z/2 + 0.35)) + Vector((sx * leg_offset_x, sy * leg_offset_y, 0))
+            create_furniture_primitive(f"{name}_Leg", leg_loc, (0.1, 0.1, 0.7), mats['Wood'], collection)
+
 def add_furniture_gf(mats, collection):
     # Otla (Front Platform)
     create_furniture_primitive("GF_Otla", (WIDTH+1, DEPTH-2, 0.2), (2, 4, 0.4), mats['Sandstone'], collection)
     # Living Room Sofa (East side)
-    create_furniture_primitive("GF_Sofa_Main", (WIDTH-2, DEPTH-5, 0.4), (3, 0.8, 0.6), mats['Wood'], collection)
+    create_sofa("GF_Sofa_Main", (WIDTH-2, DEPTH-5, 0.4), (3, 0.8, 0.6), mats, collection)
     # TV Unit
     create_furniture_primitive("GF_TV_Unit", (WIDTH-0.2, DEPTH-5, 1.2), (0.1, 2, 1.5), mats['Wood'], collection)
     # Pooja Mandir (NE)
     create_furniture_primitive("GF_Pooja", (WIDTH-1, DEPTH-1, 0.6), (1, 1, 1.2), mats['Marble'], collection)
     # Dining Table
-    create_furniture_primitive("GF_Dining_Table", (WIDTH-5, DEPTH/2, 0.75), (1.5, 1, 0.05), mats['Wood'], collection)
+    create_table("GF_Dining_Table", (WIDTH-5, DEPTH/2, 0.75), (1.5, 1, 0.05), mats, collection)
     # Kitchen Cabinets (SE)
     create_furniture_primitive("GF_Kitchen_Counter", (WIDTH-1.5, 2, 0.9), (1, 4, 0.1), mats['Marble'], collection)
     # Bed SW Bedroom
@@ -175,7 +214,7 @@ def add_furniture_ff(mats, collection):
     # Master Bed (SW)
     create_furniture_primitive("FF_Master_Bed", (2, 2, FLOOR_HEIGHT + 0.3), (2, 2, 0.5), mats['Wood'], collection)
     # Balcony Railing (East)
-    create_furniture_primitive("FF_Balcony_Rail", (WIDTH+0.5, DEPTH/2, FLOOR_HEIGHT + 0.5), (0.1, DEPTH, 1), mats['Glass'], collection)
+    create_jali((WIDTH, DEPTH/2, FLOOR_HEIGHT + 1), Vector((0.1, DEPTH, 2)), collection, mats)
 
 def add_furniture_tf(mats, collection):
     # Luxury Room Bed
@@ -241,13 +280,14 @@ def setup_cameras():
 
     # Follow path constraint
     con = cam_walk.constraints.new(type='FOLLOW_PATH')
+    con.name = "FollowPath"
     con.target = path
     con.use_fixed_location = True
 
     # Animate follow path
-    cam_walk.keyframe_insert(data_path="constraints[\"FOLLOW_PATH\"].offset_factor", frame=1)
+    con.keyframe_insert(data_path="offset_factor", frame=1)
     con.offset_factor = 1.0
-    cam_walk.keyframe_insert(data_path="constraints[\"FOLLOW_PATH\"].offset_factor", frame=250)
+    con.keyframe_insert(data_path="offset_factor", frame=250)
 
     # Keyframes for animation
     cam_walk.data.dof.use_dof = True
@@ -258,7 +298,25 @@ def apply_bevel(obj, amount=0.01):
     mod.width = amount
     mod.segments = 3
 
-def create_opening(target_wall, location, size):
+def create_jali(location, size, collection, mats):
+    # Procedural Jali (lattice)
+    bpy.ops.mesh.primitive_grid_add(x_subdivisions=10, y_subdivisions=10, size=1, location=location)
+    jali = bpy.context.active_object
+    jali.name = "Jali"
+    jali.rotation_euler[1] = math.radians(90) # Vertical
+    jali.scale = size
+
+    # Wireframe modifier for lattice look
+    mod = jali.modifiers.new(name="Wireframe", type='WIREFRAME')
+    mod.thickness = 0.02
+
+    jali.data.materials.append(mats['Wood'])
+    for col in jali.users_collection:
+        col.objects.unlink(jali)
+    collection.objects.link(jali)
+    return jali
+
+def create_architectural_opening(target_wall, location, size, mats, collection, is_door=False):
     # Boolean cut for windows/doors
     bpy.ops.mesh.primitive_cube_add(size=1, location=location)
     cutter = bpy.context.active_object
@@ -273,6 +331,36 @@ def create_opening(target_wall, location, size):
     cutter.display_type = 'WIRE'
     cutter.hide_render = True
     cutter.hide_viewport = True
+
+    # Add Frame
+    frame_thickness = 0.05
+    frame_scale = Vector((size.x + frame_thickness, size.y + frame_thickness, size.z + frame_thickness))
+    bpy.ops.mesh.primitive_cube_add(size=1, location=location)
+    frame = bpy.context.active_object
+    frame.name = "Frame"
+    frame.scale = frame_scale
+
+    # Cut hole in frame
+    f_mod = frame.modifiers.new(name="Boolean", type='BOOLEAN')
+    f_mod.object = cutter
+    f_mod.operation = 'DIFFERENCE'
+
+    frame.data.materials.append(mats['Wood'])
+    for col in frame.users_collection:
+        col.objects.unlink(frame)
+    collection.objects.link(frame)
+
+    # Add Glass
+    if not is_door:
+        bpy.ops.mesh.primitive_cube_add(size=1, location=location)
+        glass = bpy.context.active_object
+        glass.name = "GlassPane"
+        glass.scale = Vector((size.x - 0.02, 0.02, size.z - 0.02))
+        glass.data.materials.append(mats['Glass'])
+        for col in glass.users_collection:
+            col.objects.unlink(glass)
+        collection.objects.link(glass)
+
     return cutter
 
 def setup_render_settings():
@@ -301,6 +389,12 @@ def generate_full_house():
     # Setup Materials
     mats = setup_materials()
 
+    # Ground Plane
+    bpy.ops.mesh.primitive_plane_add(size=100, location=(WIDTH/2, DEPTH/2, -0.01))
+    ground = bpy.context.active_object
+    ground.name = "GroundPlane"
+    ground.data.materials.append(mats['Sandstone'])
+
     # Setup Collections
     root_col = create_collection("House_Project")
     gf_col = create_collection("GF")
@@ -323,10 +417,10 @@ def generate_full_house():
         apply_bevel(w)
 
     # Openings
-    create_opening(w_e, (WIDTH, DEPTH-2, 1.2), (0.3, 1.5, 2.1)) # Main Door
+    create_architectural_opening(w_e, (WIDTH, DEPTH-2, 1.2), Vector((0.3, 1.5, 2.1)), mats, gf_col, is_door=True) # Main Door
     # Windows
-    create_opening(w_e, (WIDTH, DEPTH-10, 1.5), (0.3, 2, 1.2))
-    create_opening(w_n, (WIDTH/2, DEPTH, 1.5), (2, 0.3, 1.2))
+    create_architectural_opening(w_e, (WIDTH, DEPTH-10, 1.5), Vector((0.3, 2, 1.2)), mats, gf_col)
+    create_architectural_opening(w_n, (WIDTH/2, DEPTH, 1.5), Vector((2, 0.3, 1.2)), mats, gf_col)
 
     # GF Interior Walls
     iw1 = create_wall("GF_Int_Wall_1", Vector((4, 0, 0)), Vector((4, 6, 0)), FLOOR_HEIGHT, 0.115, gf_col)
@@ -357,6 +451,21 @@ def generate_full_house():
 
     # Terrace
     create_floor("Terrace_Floor", 0, 0, WIDTH, DEPTH, 0.2, 3*FLOOR_HEIGHT, terr_col).data.materials.append(mats['Sandstone'])
+
+    # Pergola on Terrace (North side)
+    for i in range(10):
+        beam = create_furniture_primitive(f"Pergola_Beam_{i}", (WIDTH/2, 5 + i*0.8, 3*FLOOR_HEIGHT + 2.5), (WIDTH, 0.1, 0.1), mats['Wood'], terr_col)
+    create_furniture_primitive("Pergola_Post_1", (0.1, 5, 3*FLOOR_HEIGHT + 1.25), (0.15, 0.15, 2.5), mats['Wood'], terr_col)
+    create_furniture_primitive("Pergola_Post_2", (WIDTH-0.1, 5, 3*FLOOR_HEIGHT + 1.25), (0.15, 0.15, 2.5), mats['Wood'], terr_col)
+    create_furniture_primitive("Pergola_Post_3", (0.1, 13, 3*FLOOR_HEIGHT + 1.25), (0.15, 0.15, 2.5), mats['Wood'], terr_col)
+    create_furniture_primitive("Pergola_Post_4", (WIDTH-0.1, 13, 3*FLOOR_HEIGHT + 1.25), (0.15, 0.15, 2.5), mats['Wood'], terr_col)
+
+    # Plants (Green blocks for now)
+    create_furniture_primitive("Tulsi_Plant", (WIDTH-2, DEPTH-2, 3*FLOOR_HEIGHT + 0.4), (0.4, 0.4, 0.8), mats['Green'], terr_col)
+
+    # Roof Overhang
+    roof_overhang = create_floor("Roof_Overhang", -0.5, -0.5, WIDTH+1, DEPTH+1, 0.1, 4*FLOOR_HEIGHT, terr_col)
+    roof_overhang.data.materials.append(mats['Sandstone'])
 
     # Setup Light/Cam/Render
     setup_lighting()
