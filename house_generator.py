@@ -76,8 +76,9 @@ def setup_materials():
     node_pbsdf = nodes.new(type='ShaderNodeBsdfPrincipled')
     node_pbsdf.inputs['Base Color'].default_value = (0.9, 0.9, 0.9, 1.0)
     node_pbsdf.inputs['Roughness'].default_value = 0.1
-    node_musgrave = nodes.new(type='ShaderNodeTexMusgrave')
+    node_musgrave = nodes.new(type='ShaderNodeTexNoise')
     node_musgrave.inputs['Scale'].default_value = 10.0
+    node_musgrave.inputs['Detail'].default_value = 15.0
     node_ramp = nodes.new(type='ShaderNodeValToRGB')
     mat_marble.node_tree.links.new(node_musgrave.outputs['Fac'], node_ramp.inputs['Fac'])
     mat_marble.node_tree.links.new(node_ramp.outputs['Color'], node_pbsdf.inputs['Base Color'])
